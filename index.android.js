@@ -64,7 +64,6 @@ export default class App extends Component {
             style={{height: 64, backgroundColor: '#1976D2'}}
             title='Claymore Miner Manager'
             titleColor='white'
-            actions={[{title: 'Settings', show: 'always'}]}
           />
           <ActionButton
             buttonColor='#FFAB00'

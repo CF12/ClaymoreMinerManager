@@ -12,12 +12,4 @@ public class MainActivity extends ReactActivity {
     protected String getMainComponentName() {
         return "ClaymoreUtility";
     }
-
-    @Override
-    protected List<ReactPackage> getPackages() {
-        return Arrays.<ReactPackage>asList(
-            new MainReactPackage(),
-            new ReactNativeDialogsPackage() // add this manager
-        );
-    }
 }
