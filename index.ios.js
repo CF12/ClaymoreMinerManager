@@ -50,4 +50,4 @@ const styles = StyleSheet.create({
   },
 });
 
-AppRegistry.registerComponent('App', () => ClaymoreUtility);
+AppRegistry.registerComponent('AppScreen', () => ClaymoreUtility);
