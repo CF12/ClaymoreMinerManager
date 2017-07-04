@@ -19,7 +19,7 @@ import { Button, Text, StyleProvider, Container, Header, Content, ListItem, Chec
 import getTheme from './native-base-theme/components'
 import Icon from 'react-native-vector-icons/FontAwesome'
 
-dbSet('cards', [{name: 'asd', ip: '192.168.1.1', port: '7777'}, {name: 'asd2', ip: '127.0.0.1', port: '1337'}, {name: 'asd2', ip: '127.0.0.1', port: '1337'}, {name: 'asd2', ip: '127.0.0.1', port: '1337'}])
+dbSet('cards', [{name: 'asd', ip: '123.168.1.1', port: '7777'}])
 
 const styles = StyleSheet.create({
   flexCenter: {
@@ -34,7 +34,6 @@ function dbFetch (key, callback) {
     if (error) throw error && console.error(error)
     result = JSON.parse(result)
 
-    // console.log('DBFETCH > ' + result)
     if (callback) callback(result)
     else return result
   })
@@ -43,7 +42,6 @@ function dbFetch (key, callback) {
 function dbSet (key, value, callback) {
   value = JSON.stringify(value)
 
-  // console.log('DBSET > ' + value)
   AsyncStorage.setItem(key, value, (error) => {
     if (error) throw error && console.error(error)
     if (callback) callback()
@@ -251,8 +249,9 @@ export default class AppScreen extends Component {
     }
 
     let _saveModalInputs = () => {
-      if (dbFetch('cards')) dbSet('cards', dbFetch('cards').append(this.modalInput))
-      else dbSet('cards', [this.modalInput])
+      dbFetch('cards', (res) => {
+        if (!res) dbSet('cards', [])
+      })
     }
 
     return (
