@@ -12,14 +12,20 @@ import {
   TextInput,
   Modal,
   AsyncStorage,
-  ScrollView
+  ScrollView,
+  ActivityIndicator
 } from 'react-native'
 import ActionButton from 'react-native-action-button'
 import { Button, Text, StyleProvider, Container, Header, Content, ListItem, CheckBox, Left, Right, Body, Title, Card } from 'native-base/src'
-import getTheme from './native-base-theme/components'
-import Icon from 'react-native-vector-icons/FontAwesome'
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons'
 
-dbSet('cards', [{name: 'asd', ip: '123.168.1.1', port: '7777'}])
+dbFetch('cards', (res) => {
+  if (!res) {
+    dbSet('cards', {}, () => {
+      dbFetch('cards')
+    })
+  }
+})
 
 const styles = StyleSheet.create({
   flexCenter: {
@@ -52,6 +58,7 @@ class MinerCard extends Component {
   constructor (props) {
     super(props)
     this.state = {
+      status: 0,
       version: '',
       uptime: '',
       pools: '',
@@ -68,9 +75,16 @@ class MinerCard extends Component {
     }
 
     this.loadData = (callback) => {
-      fetch(`http://${String('192.168.1.6')}:${String(3333)}`, {
-        method: 'GET'
-      })
+      Promise.race([
+        fetch(`http://${String(this.props.ip)}:${String(this.props.port)}`, {
+          method: 'GET'
+        }),
+        new Promise((resolve, reject) => {
+          setTimeout(() => {
+            reject('Connection Timeout (3000ms)')
+          }, 3000)
+        })
+      ])
         .then((rawRes) => { return rawRes.json() })
         .then((res) => {
           res = res.result
@@ -86,6 +100,7 @@ class MinerCard extends Component {
           }
 
           this.setState({
+            status: 1,
             version: res[0],
             uptime: res[1],
             pools: res[7].split(';'),
@@ -101,15 +116,13 @@ class MinerCard extends Component {
             totalShares: ethData[1] + dualData[1],
             highestTemp: Math.max(...temps),
             highestFanSpeed: Math.max(...fanSpeeds)
-
           })
 
           console.log(this.state)
           if (callback) callback()
         })
         .catch((err) => {
-          alert(err)
-          console.error(err)
+          if (err) this.setState({status: 2})
         })
     }
   }
@@ -119,19 +132,23 @@ class MinerCard extends Component {
   }
 
   render () {
-    return (
-      <TouchableNativeFeedback>
-        <View style={{elevation: 4, backgroundColor: 'white', margin: 12}}>
-          <View style={{marginTop: 24, marginBottom: 24, marginLeft: 16, marginRight: 16}}>
+    let statusText
+    let cardBody
 
-            <View style={{display: 'flex', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14}}>
-              <View style={{display: 'flex', flexDirection: 'row'}}>
-                <Text style={{fontSize: 24}}>{this.props.name} | </Text>
-                <Text style={{fontSize: 24, color: 'green'}}>{this.props.ip}:{this.props.port}</Text>
-              </View>
-              <Text style={{fontSize: 24, color: 'green'}}>Online</Text>
-            </View>
+    switch (this.state.status) {
+      case 0:
+        statusText = <Text style={{fontSize: 24, color: 'blue'}}>Loading</Text>
+        cardBody = (
+          <View style={{height: 180, display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
+            <ActivityIndicator animating color='blue' size='large' />
+          </View>
+        )
+        break
 
+      case 1:
+        statusText = <Text style={{fontSize: 24, color: 'green'}}>Online</Text>
+        cardBody = (
+          <View style={{height: 180}}>
             <View style={{display: 'flex', flexDirection: 'row', marginBottom: 14}}>
               {this.state.pools.length === 1
                 ? <Text style={{fontSize: 14, color: 'rgba(0, 0, 0, 0.6)'}}>{this.state.pools[0]}</Text>
@@ -194,6 +211,35 @@ class MinerCard extends Component {
                 </View> : <View />}
               </View>
             </View>
+          </View>
+        )
+        break
+
+      case 2:
+        statusText = <Text style={{fontSize: 24, color: 'red'}}>Offline</Text>
+        cardBody = (
+          <View style={{height: 180, display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
+            <Icon size={80} name='emoticon-sad' />
+            <Text style={{marginTop: 12, color: 'gray', fontStyle: 'italic'}}>R.I.P Miner</Text>
+          </View>
+        )
+        break
+    }
+
+    return (
+      <TouchableNativeFeedback>
+        <View style={{elevation: 4, backgroundColor: 'white', margin: 12}}>
+          <View style={{marginTop: 24, marginBottom: 24, marginLeft: 16, marginRight: 16}}>
+
+            <View style={{display: 'flex', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14}}>
+              <View style={{display: 'flex', flexDirection: 'row'}}>
+                <Text style={{fontSize: 24}}>{this.props.name} - </Text>
+                <Text style={{fontSize: 24, color: 'green'}}>{this.props.ip}:{this.props.port}</Text>
+              </View>
+              {statusText}
+            </View>
+
+            {cardBody}
 
           </View>
         </View>
@@ -221,11 +267,16 @@ export default class AppScreen extends Component {
       </View>
     )
 
+    this.loadCards()
+  }
+
+  loadCards () {
     dbFetch('cards', (cards) => {
       let result = []
       for (let i = 0; i < cards.length; i++) {
         let e = cards[i]
-        result.unshift(<MinerCard key={i} name={e.name} ip={e.ip} port={e.port} />)
+        if (this.state.minerCards.includes(e)) return
+        else result.unshift(<MinerCard key={i} name={e.name} ip={e.ip} port={e.port} />)
       }
       this.setState({minerCards: result})
     })
@@ -249,94 +300,119 @@ export default class AppScreen extends Component {
     }
 
     let _saveModalInputs = () => {
-      dbFetch('cards', (res) => {
-        if (!res) dbSet('cards', [])
+      return new Promise((resolve, reject) => {
+        if (!this.state.modal.name || !this.state.modal.ip || !this.state.modal.port) reject(Error('Empty Input(s)'))
+
+        dbFetch('cards', (cards) => {
+          if (!cards.length) cards = []
+          else {
+            for (let e of cards) {
+              if (e.name === this.state.modal.name) reject(Error('Miner name has been taken already'))
+            }
+          }
+
+          cards.push(this.modalInput)
+          dbSet('cards', cards, () => {
+            this.loadCards()
+            resolve()
+          })
+        })
       })
     }
 
     return (
-      <StyleProvider style={getTheme()} >
-        <Container>
-          <DrawerLayoutAndroid
-            ref={_drawer => { this.drawer = _drawer }}
-            drawerWidth={300}
-            drawerPosition={DrawerLayoutAndroid.positions.left}
-            renderNavigationView={() => this.navigationView} >
+      <Container>
+        <DrawerLayoutAndroid
+          ref={_drawer => { this.drawer = _drawer }}
+          drawerWidth={300}
+          drawerPosition={DrawerLayoutAndroid.positions.left}
+          renderNavigationView={() => this.navigationView} >
 
-            <ToolbarAndroid
-              style={{height: 64, backgroundColor: '#3F51B5'}}
-              titleColor='white'
-              title='Claymore Utility' >
+          <Icon.ToolbarAndroid
+            navIconName={'menu'}
+            onIconClicked={_openDrawer}
+            style={{height: 64, backgroundColor: '#3F51B5'}}
+            titleColor='white'
+            title='Claymore Utility' />
 
-            </ToolbarAndroid>
+          <ScrollView>
+            { this.state.minerCards }
+          </ScrollView>
 
-            <ScrollView>
-              { this.state.minerCards }
-            </ScrollView>
+          <ActionButton
+            buttonColor='#FFAB00'
+            onPress={() => {
+              _showModal()
+            }}
+          />
 
-            <ActionButton
-              buttonColor='#FFAB00'
-              onPress={() => {
-                _showModal()
-              }}
-            />
+          <Modal animationType={'slide'} visible={this.state.modal.show} onRequestClose={() => { _hideModal() }}>
+            <View style={{backgroundColor: 'white', width: '100%', height: '100%'}}>
+              <Text style={{paddingLeft: 24, paddingRight: 24, paddingTop: 24, paddingBottom: 20, fontSize: 24, fontWeight: '500'}}>Add Miner</Text>
 
-            <Modal animationType={'slide'} visible={this.state.modal.show} onRequestClose={() => { _hideModal() }}>
-              <View style={{backgroundColor: 'white', width: '100%', height: '100%'}}>
-                <Text style={{paddingLeft: 24, paddingRight: 24, paddingTop: 24, paddingBottom: 20, fontSize: 24, fontWeight: '500'}}>Add Miner</Text>
+              <View style={{paddingLeft: 24, paddingRight: 24, paddingBottom: 40}}>
+                <Text style={{color: '#9E9E9E'}}>Miner Name</Text>
+                <TextInput
+                  onChangeText={(value) => { this.modalInput.name = value }}
+                  placeholder='New Miner'
+                  placeholderTextColor='#c9c9c9' />
 
-                <View style={{paddingLeft: 24, paddingRight: 24, paddingBottom: 40}}>
-                  <Text style={{color: '#9E9E9E'}}>Miner Name</Text>
-                  <TextInput
-                    onChangeText={(value) => { this.modalInput.name = value }}
-                    placeholder='New Miner'
-                    placeholderTextColor='#c9c9c9' />
+                <Text style={{color: '#9E9E9E'}}>IP Address</Text>
+                <TextInput
+                  autoCorrect={false}
+                  onChangeText={(value) => { this.modalInput.ip = value }}
+                  maxLength={15}
+                  placeholder='127.0.0.1'
+                  placeholderTextColor='#c9c9c9'
+                  keyboardType='numeric' />
 
-                  <Text style={{color: '#9E9E9E'}}>IP Address</Text>
-                  <TextInput
-                    autoCorrect={false}
-                    onChangeText={(value) => { this.modalInput.ip = value }}
-                    maxLength={15}
-                    placeholder='127.0.0.1'
-                    placeholderTextColor='#c9c9c9'
-                    keyboardType='numeric' />
+                <Text style={{color: '#9E9E9E'}}>Port</Text>
+                <TextInput
+                  autoCorrect={false}
+                  onChangeText={(value) => { this.modalInput.port = value }}
+                  maxLength={5}
+                  placeholder='3333'
+                  placeholderTextColor='#c9c9c9'
+                  keyboardType='numeric' />
 
-                  <Text style={{color: '#9E9E9E'}}>Port</Text>
-                  <TextInput
-                    autoCorrect={false}
-                    onChangeText={(value) => { this.modalInput.port = value }}
-                    maxLength={5}
-                    placeholder='3333'
-                    placeholderTextColor='#c9c9c9'
-                    keyboardType='numeric' />
-                </View>
-
-                <View style={{flex: 1, flexDirection: 'row', position: 'absolute', bottom: 0}}>
-                  <TouchableNativeFeedback onPress={() => {
-                    _clearModalInputs()
-                    _hideModal()
-                  }}>
-                    <View style={{flex: 0.5, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f44a41', height: 64}}>
-                      <Text style={{color: 'white', fontWeight: '500', textShadowColor: 'rgba(0, 0, 0, 80)', textShadowRadius: 5, textShadowOffset: {width: 0.2, height: 0.2}}}>CANCEL</Text>
-                    </View>
-                  </TouchableNativeFeedback>
-
-                  <TouchableNativeFeedback onPress={() => {
-                    _saveModalInputs()
-                    _hideModal()
-                  }}>
-                    <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#5de459', height: 64}}>
-                      <Text style={{color: 'white', fontWeight: '500', textShadowColor: 'rgba(0, 0, 0, 80)', textShadowRadius: 5, textShadowOffset: {width: 0.2, height: 0.2}}}>ADD</Text>
-                    </View>
-                  </TouchableNativeFeedback>
-                </View>
-
+                <Text style={{color: 'red', marginTop: 12}}>{this.state.modal.error}</Text>
               </View>
-            </Modal>
 
-          </DrawerLayoutAndroid>
-        </Container>
-      </StyleProvider>
+              <View style={{flex: 1, flexDirection: 'row', position: 'absolute', bottom: 0}}>
+                <TouchableNativeFeedback onPress={() => {
+                  _clearModalInputs()
+                  _hideModal()
+                }}>
+                  <View style={{flex: 0.5, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f44a41', height: 64}}>
+                    <Text style={{color: 'white', fontWeight: '500', textShadowColor: 'rgba(0, 0, 0, 80)', textShadowRadius: 5, textShadowOffset: {width: 0.2, height: 0.2}}}>CANCEL</Text>
+                  </View>
+                </TouchableNativeFeedback>
+
+                <TouchableNativeFeedback onPress={() => {
+                  _saveModalInputs()
+                    .then(() => {
+                      _hideModal()
+                    })
+                    .catch((err) => {
+                      if (err) {
+                        this.setState({modal: {error: err + '!'}})
+                        setTimeout(() => {
+                          this.setState({modal: {error: undefined}})
+                        }, 6000)
+                      }
+                    })
+                }}>
+                  <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#5de459', height: 64}}>
+                    <Text style={{color: 'white', fontWeight: '500', textShadowColor: 'rgba(0, 0, 0, 80)', textShadowRadius: 5, textShadowOffset: {width: 0.2, height: 0.2}}}>ADD</Text>
+                  </View>
+                </TouchableNativeFeedback>
+              </View>
+
+            </View>
+          </Modal>
+
+        </DrawerLayoutAndroid>
+      </Container>
     )
   }
 }
