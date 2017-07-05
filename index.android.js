@@ -58,20 +58,7 @@ class MinerCard extends Component {
   constructor (props) {
     super(props)
     this.state = {
-      status: 0,
-      version: '',
-      uptime: '',
-      pools: '',
-      totalEthHashrate: '',
-      totalEthShares: '',
-      totalEthRejectedShares: '',
-      totalDualHashrate: '',
-      totalDualShares: '',
-      totalDualRejectedShares: '',
-      totalHashrate: '',
-      totalShares: '',
-      highestTemp: '',
-      highestFanSpeed: ''
+      status: 0
     }
 
     this.loadData = (callback) => {
@@ -278,7 +265,7 @@ export default class AppScreen extends Component {
         if (this.state.minerCards.includes(e)) return
         else result.unshift(<MinerCard key={i} name={e.name} ip={e.ip} port={e.port} />)
       }
-      this.setState({minerCards: result})
+      this.setState(Object.assign(this.state, {minerCards: result}))
     })
   }
 
@@ -288,33 +275,33 @@ export default class AppScreen extends Component {
     }
 
     let _showModal = () => {
-      this.setState({modal: {show: true}})
+      this.setState(Object.assign(this.state, {modal: {show: true}}))
     }
 
     let _hideModal = () => {
-      this.setState({modal: {show: false}})
+      this.setState(Object.assign(this.state, {modal: {show: false}}))
     }
 
     let _clearModalInputs = () => {
-      this.setState({modal: {name: undefined, ip: undefined, port: undefined}})
+      this.modalInput = {name: undefined, ip: undefined, port: undefined}
     }
 
     let _saveModalInputs = () => {
       return new Promise((resolve, reject) => {
-        if (!this.state.modal.name || !this.state.modal.ip || !this.state.modal.port) reject(Error('Empty Input(s)'))
+        if (!this.modalInput.name || !this.modalInput.ip || !this.modalInput.port) return reject(Error('Empty Input(s)'))
 
         dbFetch('cards', (cards) => {
           if (!cards.length) cards = []
           else {
             for (let e of cards) {
-              if (e.name === this.state.modal.name) reject(Error('Miner name has been taken already'))
+              if (e.name === this.modalInput.name) return reject(Error('Miner name has been taken already'))
             }
           }
 
           cards.push(this.modalInput)
           dbSet('cards', cards, () => {
             this.loadCards()
-            resolve()
+            return resolve()
           })
         })
       })
@@ -391,13 +378,14 @@ export default class AppScreen extends Component {
                 <TouchableNativeFeedback onPress={() => {
                   _saveModalInputs()
                     .then(() => {
+                      _clearModalInputs()
                       _hideModal()
                     })
                     .catch((err) => {
                       if (err) {
-                        this.setState({modal: {error: err + '!'}})
+                        this.setState(Object.assign(this.state, {modal: {error: err + '!'}}))
                         setTimeout(() => {
-                          this.setState({modal: {error: undefined}})
+                          this.setState(Object.assign(this.state, {modal: {error: undefined}}))
                         }, 6000)
                       }
                     })
