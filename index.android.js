@@ -63,17 +63,22 @@ class MinerCard extends Component {
 
     this.loadData = (callback) => {
       Promise.race([
-        fetch(`http://${String(this.props.ip)}:${String(this.props.port)}`, {
-          method: 'GET'
+        fetch(`http://${this.props.ip}:${this.props.port}`, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
         }),
         new Promise((resolve, reject) => {
           setTimeout(() => {
-            reject('Connection Timeout (3000ms)')
+            reject(Error('timeout'))
           }, 3000)
         })
       ])
         .then((rawRes) => { return rawRes.json() })
         .then((res) => {
+          console.warn(res)
           res = res.result
           let ethData = res[2].split(';')
           let dualData = res[4].split(';')
@@ -105,11 +110,15 @@ class MinerCard extends Component {
             highestFanSpeed: Math.max(...fanSpeeds)
           })
 
-          console.log(this.state)
           if (callback) callback()
         })
         .catch((err) => {
-          if (err) this.setState({status: 2})
+          console.log(err.message)
+          if (err.message === 'timeout') this.setState({status: 2})
+          else {
+            console.error(err)
+            this.setState({status: 3})
+          }
         })
     }
   }
@@ -126,7 +135,7 @@ class MinerCard extends Component {
       case 0:
         statusText = <Text style={{fontSize: 24, color: 'blue'}}>Loading</Text>
         cardBody = (
-          <View style={{height: 180, display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
+          <View style={{height: 224, display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
             <ActivityIndicator animating color='blue' size='large' />
           </View>
         )
@@ -135,7 +144,7 @@ class MinerCard extends Component {
       case 1:
         statusText = <Text style={{fontSize: 24, color: 'green'}}>Online</Text>
         cardBody = (
-          <View style={{height: 180}}>
+          <View style={{height: 224}}>
             <View style={{display: 'flex', flexDirection: 'row', marginBottom: 14}}>
               {this.state.pools.length === 1
                 ? <Text style={{fontSize: 14, color: 'rgba(0, 0, 0, 0.6)'}}>{this.state.pools[0]}</Text>
@@ -205,9 +214,19 @@ class MinerCard extends Component {
       case 2:
         statusText = <Text style={{fontSize: 24, color: 'red'}}>Offline</Text>
         cardBody = (
-          <View style={{height: 180, display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
+          <View style={{height: 224, display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
             <Icon size={80} name='emoticon-sad' />
-            <Text style={{marginTop: 12, color: 'gray', fontStyle: 'italic'}}>R.I.P Miner</Text>
+            <Text style={{marginTop: 12, color: 'gray', fontStyle: 'italic'}}>Miner Offline</Text>
+          </View>
+        )
+        break
+
+      case 3:
+        statusText = <Text style={{fontSize: 24, color: 'red'}}>Offline</Text>
+        cardBody = (
+          <View style={{height: 224, display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
+            <Icon size={80} name='warning' />
+            <Text style={{marginTop: 12, color: 'gray', fontStyle: 'italic'}}>Error Occured</Text>
           </View>
         )
         break
