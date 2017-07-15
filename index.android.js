@@ -19,6 +19,8 @@ import ActionButton from 'react-native-action-button'
 import { Button, Text, StyleProvider, Container, Header, Content, ListItem, CheckBox, Left, Right, Body, Title, Card } from 'native-base/src'
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons'
 
+const net = require('net')
+
 dbFetch('cards', (res) => {
   if (!res) {
     dbSet('cards', {}, () => {
@@ -63,12 +65,12 @@ class MinerCard extends Component {
 
     this.loadData = (callback) => {
       Promise.race([
-        fetch(`http://${this.props.ip}:${this.props.port}`, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-          }
+        new Promise((resolve, reject) => {
+          let minerConnection = net.createConnection({port: String(this.props.port), host: String(this.props.ip)})
+          minerConnection.on('data', (res) => {
+            resolve(res)
+          })
+          minerConnection.write(JSON.stringify({id: 0, jsonrpc: '2.0', method: 'miner_getstat1'}))
         }),
         new Promise((resolve, reject) => {
           setTimeout(() => {
@@ -133,7 +135,7 @@ class MinerCard extends Component {
 
     switch (this.state.status) {
       case 0:
-        statusText = <Text style={{fontSize: 24, color: 'blue'}}>Loading</Text>
+        statusText = <Text style={{fontSize: 22, color: 'blue'}}>Loading</Text>
         cardBody = (
           <View style={{height: 224, display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
             <ActivityIndicator animating color='blue' size='large' />
@@ -142,7 +144,7 @@ class MinerCard extends Component {
         break
 
       case 1:
-        statusText = <Text style={{fontSize: 24, color: 'green'}}>Online</Text>
+        statusText = <Text style={{fontSize: 22, color: 'green'}}>Online</Text>
         cardBody = (
           <View style={{height: 224}}>
             <View style={{display: 'flex', flexDirection: 'row', marginBottom: 14}}>
@@ -212,7 +214,7 @@ class MinerCard extends Component {
         break
 
       case 2:
-        statusText = <Text style={{fontSize: 24, color: 'red'}}>Offline</Text>
+        statusText = <Text style={{fontSize: 22, color: 'red'}}>Offline</Text>
         cardBody = (
           <View style={{height: 224, display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
             <Icon size={80} name='emoticon-sad' />
@@ -222,7 +224,7 @@ class MinerCard extends Component {
         break
 
       case 3:
-        statusText = <Text style={{fontSize: 24, color: 'red'}}>Offline</Text>
+        statusText = <Text style={{fontSize: 22, color: 'red'}}>Offline</Text>
         cardBody = (
           <View style={{height: 224, display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
             <Icon size={80} name='warning' />
@@ -239,8 +241,8 @@ class MinerCard extends Component {
 
             <View style={{display: 'flex', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14}}>
               <View style={{display: 'flex', flexDirection: 'row'}}>
-                <Text style={{fontSize: 24}}>{this.props.name} - </Text>
-                <Text style={{fontSize: 24, color: 'green'}}>{this.props.ip}:{this.props.port}</Text>
+                <Text style={{fontSize: 22}}>{this.props.name} - </Text>
+                <Text style={{fontSize: 22, color: 'green'}}>{this.props.ip}:{this.props.port}</Text>
               </View>
               {statusText}
             </View>
