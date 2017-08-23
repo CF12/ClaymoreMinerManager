@@ -6,20 +6,19 @@ import {
   AppRegistry,
   View,
   DrawerLayoutAndroid,
-  ToolbarAndroid,
-  TouchableOpacity,
   TouchableNativeFeedback,
   TextInput,
   Modal,
   AsyncStorage,
   ScrollView,
-  ActivityIndicator
+  ActivityIndicator,
+  Text,
+  Animated
 } from 'react-native'
 import ActionButton from 'react-native-action-button'
-import { Button, Text, StyleProvider, Container, Header, Content, ListItem, CheckBox, Left, Right, Body, Title, Card } from 'native-base/src'
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons'
-
-const net = require('net')
+import './shim.js'
+import net from 'net'
 
 dbFetch('cards', (res) => {
   if (!res) {
@@ -29,17 +28,9 @@ dbFetch('cards', (res) => {
   }
 })
 
-const styles = StyleSheet.create({
-  flexCenter: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center'
-  }
-})
-
 function dbFetch (key, callback) {
   AsyncStorage.getItem(key, (error, result) => {
-    if (error) throw error && console.error(error)
+    if (error) throw error
     result = JSON.parse(result)
 
     if (callback) callback(result)
@@ -51,7 +42,7 @@ function dbSet (key, value, callback) {
   value = JSON.stringify(value)
 
   AsyncStorage.setItem(key, value, (error) => {
-    if (error) throw error && console.error(error)
+    if (error) throw error
     if (callback) callback()
   })
 }
@@ -59,74 +50,105 @@ function dbSet (key, value, callback) {
 class MinerCard extends Component {
   constructor (props) {
     super(props)
-    this.state = {
-      status: 0
-    }
+    this.props = props
 
-    this.loadData = (callback) => {
-      Promise.race([
-        new Promise((resolve, reject) => {
-          let minerConnection = net.createConnection({port: String(this.props.port), host: String(this.props.ip)})
-          minerConnection.on('data', (res) => {
-            resolve(res)
-          })
-          minerConnection.write(JSON.stringify({id: 0, jsonrpc: '2.0', method: 'miner_getstat1'}))
-        }),
-        new Promise((resolve, reject) => {
-          setTimeout(() => {
-            reject(Error('timeout'))
-          }, 3000)
-        })
-      ])
-        .then((rawRes) => { return rawRes.json() })
-        .then((res) => {
-          console.warn(res)
-          res = res.result
-          let ethData = res[2].split(';')
-          let dualData = res[4].split(';')
-          let cardData = res[6].split(';')
-          let poolData = res[8].split(';')
-          let temps = []
-          let fanSpeeds = []
-          for (let i = 0; i < cardData.length; i++) {
-            if (i % 2 !== 0) temps.push(cardData[i])
-            else fanSpeeds.push(cardData[i])
-          }
-
-          this.setState({
-            status: 1,
-            version: res[0],
-            uptime: res[1],
-            pools: res[7].split(';'),
-            totalEthHashrate: ethData[0],
-            totalEthShares: ethData[1],
-            totalEthRejectedShares: ethData[2],
-            totalEthStaleShares: poolData[0],
-            totalDualHashrate: dualData[0],
-            totalDualShares: dualData[1],
-            totalDualRejectedShares: dualData[2],
-            totalDualStaleShares: poolData[2],
-            totalHashrate: ethData[0] + dualData[0],
-            totalShares: ethData[1] + dualData[1],
-            highestTemp: Math.max(...temps),
-            highestFanSpeed: Math.max(...fanSpeeds)
-          })
-
-          if (callback) callback()
-        })
-        .catch((err) => {
-          console.log(err.message)
-          if (err.message === 'timeout') this.setState({status: 2})
-          else {
-            console.error(err)
-            this.setState({status: 3})
-          }
-        })
-    }
+    this.initConnection()
+      
   }
 
   componentWillMount () {
-    this.loadData()
+    this.initConnection()
+  }
+
+  loadData () {
+    Promise.race([
+      new Promise((resolve, reject) => {
+        let data = ''
+        this.connection.write(JSON.stringify({ id: 0, jsonrpc: '2.0', method: 'miner_getstat1' }))
+        this.connection
+          .on('data', (res) => {
+            data += res
+          })
+
+          .on('close', () => {
+            resolve(JSON.parse(data))
+          })
+
+          .on('error', (err) => {
+            console.warn(err)
+            if (err) reject(err)
+          })
+            
+          .on('timeout', () => {
+            this.connection.destroy()
+          })
+      }),
+      new Promise((resolve, reject) => {
+        setTimeout(() => {
+          reject(Error('timeout'))
+        }, 3000)
+      })
+    ])
+      .then((res) => {
+        res = res.result
+        let ethData = res[2].split(';')
+        let dualData = res[4].split(';')
+        let cardData = res[6].split(';')
+        let poolData = res[8].split(';')
+        let temps = []
+        let fanSpeeds = []
+        for (let i = 0; i < cardData.length; i++) {
+          if (i % 2 !== 0) temps.push(cardData[i])
+          else fanSpeeds.push(cardData[i])
+        }
+
+        this.setState({
+          expanded: false,
+          status: 1,
+          version: res[0],
+          uptime: res[1],
+          pools: res[7].split(';'),
+          totalEthHashrate: ethData[0],
+          totalEthShares: ethData[1],
+          totalEthRejectedShares: ethData[2],
+          totalEthStaleShares: poolData[0],
+          totalDualHashrate: dualData[0],
+          totalDualShares: dualData[1],
+          totalDualRejectedShares: dualData[2],
+          totalDualStaleShares: poolData[2],
+          totalHashrate: ethData[0] + dualData[0],
+          totalShares: ethData[1] + dualData[1],
+          highestTemp: Math.max(...temps),
+          highestFanSpeed: Math.max(...fanSpeeds)
+        })
+      })
+      .catch((err) => {
+        console.log(err.message)
+        if (err.message === 'timeout') this.setState({ status: 2 })
+        else {
+          console.error(err)
+          this.setState({ status: 3 })
+        }
+      })
+  }
+
+  initConnection () {
+    return new Promise((resolve, reject) => {
+      let timeout = setTimeout(() => {
+        reject(Error('timeout'))
+      }, 3000)
+      
+      let connection = net.createConnection({ip: this.props.ip, port: this.props.port})
+      connection.on('connect', () => {
+        clearTimeout(timeout)
+        this.connection = connection
+        resolve()
+      })
+    })
+  }
+
+  expand () {
+    this.setState()
   }
 
   render () {
@@ -227,7 +249,7 @@ class MinerCard extends Component {
         statusText = <Text style={{fontSize: 22, color: 'red'}}>Offline</Text>
         cardBody = (
           <View style={{height: 224, display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
-            <Icon size={80} name='warning' />
+            <Icon size={80} name='alert-outline' />
             <Text style={{marginTop: 12, color: 'gray', fontStyle: 'italic'}}>Error Occured</Text>
           </View>
         )
@@ -236,21 +258,23 @@ class MinerCard extends Component {
 
     return (
       <TouchableNativeFeedback>
-        <View style={{elevation: 4, backgroundColor: 'white', margin: 12}}>
-          <View style={{marginTop: 24, marginBottom: 24, marginLeft: 16, marginRight: 16}}>
+          <View style={{elevation: 4, backgroundColor: 'white', margin: 12}}>
+            <View style={{marginTop: 24, marginBottom: 24, marginLeft: 16, marginRight: 16}}>
 
-            <View style={{display: 'flex', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14}}>
-              <View style={{display: 'flex', flexDirection: 'row'}}>
-                <Text style={{fontSize: 22}}>{this.props.name} - </Text>
-                <Text style={{fontSize: 22, color: 'green'}}>{this.props.ip}:{this.props.port}</Text>
+              <View style={{display: 'flex', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14}}>
+                <View style={{display: 'flex', flexDirection: 'row'}}>
+                  <Text style={{fontSize: 22}}>{this.props.name} - </Text>
+                  <Text style={{fontSize: 22, color: 'green'}}>{this.props.ip}:{this.props.port}</Text>
+                </View>
+                {statusText}
               </View>
-              {statusText}
+
+              {cardBody}
+
             </View>
-
-            {cardBody}
-
+            
+            <View style={{backgroundColor: 'gray', height: 20}} />
           </View>
-        </View>
       </TouchableNativeFeedback>
     )
   }
@@ -281,10 +305,12 @@ export default class AppScreen extends Component {
   loadCards () {
     dbFetch('cards', (cards) => {
       let result = []
-      for (let i = 0; i < cards.length; i++) {
-        let e = cards[i]
-        if (this.state.minerCards.includes(e)) return
-        else result.unshift(<MinerCard key={i} name={e.name} ip={e.ip} port={e.port} />)
+      if (cards) {
+        for (let i = 0; i < cards.length; i++) {
+          let e = cards[i]
+          if (this.state.minerCards.includes(e)) return
+          else result.unshift(<MinerCard key={i} name={e.name} ip={e.ip} port={e.port} />)
+        }
       }
       this.setState(Object.assign(this.state, {minerCards: result}))
     })
@@ -329,99 +355,98 @@ export default class AppScreen extends Component {
     }
 
     return (
-      <Container>
-        <DrawerLayoutAndroid
-          ref={_drawer => { this.drawer = _drawer }}
-          drawerWidth={300}
-          drawerPosition={DrawerLayoutAndroid.positions.left}
-          renderNavigationView={() => this.navigationView} >
+      <DrawerLayoutAndroid
+        ref={_drawer => { this.drawer = _drawer }}
+        drawerWidth={300}
+        drawerPosition={DrawerLayoutAndroid.positions.left}
+        renderNavigationView={() => this.navigationView} >
 
-          <Icon.ToolbarAndroid
-            navIconName={'menu'}
-            onIconClicked={_openDrawer}
-            style={{height: 64, backgroundColor: '#3F51B5'}}
-            titleColor='white'
-            title='Claymore Utility' />
+        <Icon.ToolbarAndroid
+          navIconName={'menu'}
+          onIconClicked={_openDrawer}
+          style={{height: 64, backgroundColor: '#3F51B5'}}
+          titleColor='white'
+          title='Claymore Utility' />
 
-          <ScrollView>
-            { this.state.minerCards }
-          </ScrollView>
+        <ScrollView>
+          { this.state.minerCards }
+        </ScrollView>
 
-          <ActionButton
-            buttonColor='#FFAB00'
-            onPress={() => {
-              _showModal()
-            }}
-          />
+        <ActionButton
+          buttonColor='#FFAB00'
+          onPress={() => {
+            _showModal()
+          }}
+        />
 
-          <Modal animationType={'slide'} visible={this.state.modal.show} onRequestClose={() => { _hideModal() }}>
-            <View style={{backgroundColor: 'white', width: '100%', height: '100%'}}>
-              <Text style={{paddingLeft: 24, paddingRight: 24, paddingTop: 24, paddingBottom: 20, fontSize: 24, fontWeight: '500'}}>Add Miner</Text>
+        <Modal animationType={'slide'} visible={this.state.modal.show} onRequestClose={() => { _hideModal() }}>
+          <View style={{backgroundColor: 'white', width: '100%', height: '100%'}}>
+            <Text style={{paddingLeft: 24, paddingRight: 24, paddingTop: 24, paddingBottom: 20, fontSize: 24, fontWeight: '500'}}>Add Miner</Text>
 
-              <View style={{paddingLeft: 24, paddingRight: 24, paddingBottom: 40}}>
-                <Text style={{color: '#9E9E9E'}}>Miner Name</Text>
-                <TextInput
-                  onChangeText={(value) => { this.modalInput.name = value }}
-                  placeholder='New Miner'
-                  placeholderTextColor='#c9c9c9' />
+            <View style={{paddingLeft: 24, paddingRight: 24, paddingBottom: 40}}>
+              <Text style={{color: '#9E9E9E'}}>Miner Name</Text>
+              <TextInput
+                autoCorrect
+                onChangeText={(value) => { this.modalInput.name = value }}
+                placeholder='New Miner'
+                placeholderTextColor='#c9c9c9' />
 
-                <Text style={{color: '#9E9E9E'}}>IP Address</Text>
-                <TextInput
-                  autoCorrect={false}
-                  onChangeText={(value) => { this.modalInput.ip = value }}
-                  maxLength={15}
-                  placeholder='127.0.0.1'
-                  placeholderTextColor='#c9c9c9'
-                  keyboardType='numeric' />
+              <Text style={{color: '#9E9E9E'}}>IP Address</Text>
+              <TextInput
+                autoCorrect={false}
+                onChangeText={(value) => { this.modalInput.ip = value }}
+                maxLength={15}
+                placeholder='127.0.0.1'
+                placeholderTextColor='#c9c9c9'
+                keyboardType='numeric' />
 
-                <Text style={{color: '#9E9E9E'}}>Port</Text>
-                <TextInput
-                  autoCorrect={false}
-                  onChangeText={(value) => { this.modalInput.port = value }}
-                  maxLength={5}
-                  placeholder='3333'
-                  placeholderTextColor='#c9c9c9'
-                  keyboardType='numeric' />
+              <Text style={{color: '#9E9E9E'}}>Port</Text>
+              <TextInput
+                autoCorrect={false}
+                onChangeText={(value) => { this.modalInput.port = value }}
+                maxLength={5}
+                placeholder='3333'
+                placeholderTextColor='#c9c9c9'
+                keyboardType='numeric' />
 
-                <Text style={{color: 'red', marginTop: 12}}>{this.state.modal.error}</Text>
-              </View>
-
-              <View style={{flex: 1, flexDirection: 'row', position: 'absolute', bottom: 0}}>
-                <TouchableNativeFeedback onPress={() => {
-                  _clearModalInputs()
-                  _hideModal()
-                }}>
-                  <View style={{flex: 0.5, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f44a41', height: 64}}>
-                    <Text style={{color: 'white', fontWeight: '500', textShadowColor: 'rgba(0, 0, 0, 80)', textShadowRadius: 5, textShadowOffset: {width: 0.2, height: 0.2}}}>CANCEL</Text>
-                  </View>
-                </TouchableNativeFeedback>
-
-                <TouchableNativeFeedback onPress={() => {
-                  _saveModalInputs()
-                    .then(() => {
-                      _clearModalInputs()
-                      _hideModal()
-                    })
-                    .catch((err) => {
-                      if (err) {
-                        this.setState(Object.assign(this.state, {modal: {error: err + '!'}}))
-                        setTimeout(() => {
-                          this.setState(Object.assign(this.state, {modal: {error: undefined}}))
-                        }, 6000)
-                      }
-                    })
-                }}>
-                  <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#5de459', height: 64}}>
-                    <Text style={{color: 'white', fontWeight: '500', textShadowColor: 'rgba(0, 0, 0, 80)', textShadowRadius: 5, textShadowOffset: {width: 0.2, height: 0.2}}}>ADD</Text>
-                  </View>
-                </TouchableNativeFeedback>
-              </View>
-
+              <Text style={{color: 'red', marginTop: 12}}>{this.state.modal.error}</Text>
             </View>
-          </Modal>
 
-        </DrawerLayoutAndroid>
-      </Container>
+            <View style={{flex: 1, flexDirection: 'row', position: 'absolute', bottom: 0}}>
+              <TouchableNativeFeedback onPress={() => {
+                _clearModalInputs()
+                _hideModal()
+              }}>
+                <View style={{flex: 0.5, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f44a41', height: 64}}>
+                  <Text style={{color: 'white', fontWeight: '500', textShadowColor: 'rgba(0, 0, 0, 80)', textShadowRadius: 5, textShadowOffset: {width: 0.2, height: 0.2}}}>CANCEL</Text>
+                </View>
+              </TouchableNativeFeedback>
+
+              <TouchableNativeFeedback onPress={() => {
+                _saveModalInputs()
+                  .then(() => {
+                    _clearModalInputs()
+                    _hideModal()
+                  })
+                  .catch((err) => {
+                    if (err) {
+                      this.setState(Object.assign(this.state, {modal: {error: err + '!'}}))
+                      setTimeout(() => {
+                        this.setState(Object.assign(this.state, {modal: {error: undefined}}))
+                      }, 6000)
+                    }
+                  })
+              }}>
+                <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#5de459', height: 64}}>
+                  <Text style={{color: 'white', fontWeight: '500', textShadowColor: 'rgba(0, 0, 0, 80)', textShadowRadius: 5, textShadowOffset: {width: 0.2, height: 0.2}}}>ADD</Text>
+                </View>
+              </TouchableNativeFeedback>
+            </View>
+
+          </View>
+        </Modal>
+
+      </DrawerLayoutAndroid>
     )
   }
 }
